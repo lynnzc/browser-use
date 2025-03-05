@@ -185,7 +185,7 @@
 
   const ID = { current: 0 };
 
-  const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
+  const HIGHLIGHT_CONTAINER_ID = "agent-highlight-container";
 
   /**
    * Highlights an element in the DOM and returns the index of the next element.
@@ -462,6 +462,8 @@
       return false;
     }
 
+    const tagName = element.tagName.toLowerCase();
+
     // Special handling for cookie banner elements
     const isCookieBannerElement =
       (typeof element.closest === 'function') && (
@@ -474,7 +476,7 @@
     if (isCookieBannerElement) {
       // Check if it's a button or interactive element within the banner
       if (
-        element.tagName.toLowerCase() === 'button' ||
+        tagName === 'button' ||
         element.getAttribute('role') === 'button' ||
         element.onclick ||
         element.getAttribute('onclick') ||
@@ -490,6 +492,10 @@
       }
     }
 
+    // Check for label elements with associated control
+    if (tagName === 'label' && element.control && !element.control.disabled) {
+      return true;
+    }
     // Base interactive elements and roles
     const interactiveElements = new Set([
       "a", "button", "details", "embed", "input", "menu", "menuitem",
@@ -499,7 +505,6 @@
 
     const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
 
-    const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
     const ariaRole = element.getAttribute("aria-role");
     const tabIndex = element.getAttribute("tabindex");
