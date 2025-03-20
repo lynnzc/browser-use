@@ -509,10 +509,7 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			try:
-				output = self.llm.invoke(input_messages)
-			except Exception as e:
-				logger.error(f'Failed to invoke LLM: {e}')
+			output = self.llm.invoke(input_messages)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -524,20 +521,12 @@ class Agent(Generic[Context]):
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			response: dict[str, Any] = None
-			try:
-				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			except Exception as e:
-				logger.error(f'Failed to invoke LLM: {e}')
-			parsed: AgentOutput | None = response['parsed'] if response else None
+			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			parsed: AgentOutput | None = response['parsed']
 		else:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			response: dict[str, Any] = None
-			try:
-				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			except Exception as e:
-				logger.error(f'Failed to invoke LLM: {e}')
-			parsed: AgentOutput | None = response['parsed'] if response else None
+			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			parsed: AgentOutput | None = response['parsed']
 
 		if parsed is None:
 			raise ValueError('Could not parse response.')
