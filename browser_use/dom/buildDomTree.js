@@ -541,9 +541,9 @@
 
     // Additional checks for cookie banners and consent UI
     const isCookieBanner =
-      element.id?.toLowerCase().includes('cookie') ||
-      element.id?.toLowerCase().includes('consent') ||
-      element.id?.toLowerCase().includes('notice') ||
+      element.id?.toString()?.toLowerCase().includes('cookie') ||
+      element.id?.toString()?.toLowerCase().includes('consent') ||
+      element.id?.toString()?.toLowerCase().includes('notice') ||
       (element.classList && (
         element.classList.contains('otCenterRounded') ||
         element.classList.contains('ot-sdk-container')
@@ -552,7 +552,7 @@
       element.getAttribute('aria-label')?.toLowerCase().includes('cookie') ||
       element.getAttribute('aria-label')?.toLowerCase().includes('consent') ||
       (element.tagName.toLowerCase() === 'div' && (
-        element.id?.includes('onetrust') ||
+        element.id?.toString()?.toLowerCase().includes('onetrust') ||
         (element.classList && (
           element.classList.contains('onetrust') ||
           element.classList.contains('cookie') ||
