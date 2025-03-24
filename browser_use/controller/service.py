@@ -206,14 +206,17 @@ class Controller(Generic[Context]):
 		)
 		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
-			import markdownify
+			from emmetify import Emmetifier
 
-			strip = []
-			if should_strip_link_urls:
-				strip = ['a', 'img']
-
-			content = markdownify.markdownify(await page.content(), strip=strip)
-
+			emmetifier = Emmetifier(config={
+				"html": {
+					"simplify_absolute_links": should_strip_link_urls,
+					"simplify_relative_links": should_strip_link_urls,
+					"simplify_images": should_strip_link_urls,
+				}
+			})
+			content = emmetifier.emmetify(await page.content())
+			print(content)
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
 			try:
