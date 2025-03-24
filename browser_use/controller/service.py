@@ -208,10 +208,13 @@ class Controller(Generic[Context]):
 			page = await browser.get_current_page()
 			from emmetify import Emmetifier
 
-			emmetifier = Emmetifier(config={
+			emmetifier = Emmetifier(format="html", config={
 				"html": {
-					"simplify_absolute_links": should_strip_link_urls,
+					"skip_tags": True,
+					"simplify_classes": True,
+					"prioritize_attributes": True,
 					"simplify_relative_links": should_strip_link_urls,
+					"simplify_absolute_links": should_strip_link_urls,
 					"simplify_images": should_strip_link_urls,
 				}
 			})
