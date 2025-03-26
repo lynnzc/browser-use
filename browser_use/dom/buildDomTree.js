@@ -462,6 +462,7 @@
       return false;
     }
 
+    const tagName = element.tagName.toLowerCase();
     function doesElementHaveInteractivePointer(element) {
       if (element.tagName.toLowerCase() === "html") return false;
       const style = window.getComputedStyle(element);
