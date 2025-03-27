@@ -352,7 +352,7 @@ class BrowserContext:
 				ignore_https_errors=self.config.disable_security,
 				record_video_dir=self.config.save_recording_path,
 				record_video_size=self.config.browser_window_size,
-				record_har_path = self.config.save_har_path,
+				record_har_path=self.config.save_har_path,
 				locale=self.config.locale,
 				is_mobile=self.config.is_mobile,
 				has_touch=self.config.has_touch,
@@ -823,21 +823,23 @@ class BrowserContext:
 
 			# Get all cross-origin iframes within the page and open them in new tabs
 			# mark the titles of the new tabs so the LLM knows to check them for additional content
-			iframe_urls = await dom_service.get_cross_origin_iframes()
-			for url in iframe_urls:
-				if url in [tab.url for tab in tabs_info]:
-					continue  # skip if the iframe if we already have it open in a tab
-				new_page_id = tabs_info[-1].page_id + 1
-				logger.debug(f'Opening cross-origin iframe in new tab #{new_page_id}: {url}')
-				await self.create_new_tab(url)
-				tabs_info.append(
-					TabInfo(
-						page_id=new_page_id,
-						url=url,
-						title=f'iFrame opened as new tab, treat as if embedded inside page #{self.state.target_id}: {page.url}',
-						parent_page_id=self.state.target_id,
-					)
-				)
+			# unfortunately too buggy for now, too many sites use invisible cross-origin iframes for ads, tracking, youtube videos, social media, etc.
+			# and it distracts the bot by openeing a lot of new tabs
+			# iframe_urls = await dom_service.get_cross_origin_iframes()
+			# for url in iframe_urls:
+			# 	if url in [tab.url for tab in tabs_info]:
+			# 		continue  # skip if the iframe if we already have it open in a tab
+			# 	new_page_id = tabs_info[-1].page_id + 1
+			# 	logger.debug(f'Opening cross-origin iframe in new tab #{new_page_id}: {url}')
+			# 	await self.create_new_tab(url)
+			# 	tabs_info.append(
+			# 		TabInfo(
+			# 			page_id=new_page_id,
+			# 			url=url,
+			# 			title=f'iFrame opened as new tab, treat as if embedded inside page #{self.state.target_id}: {page.url}',
+			# 			parent_page_id=self.state.target_id,
+			# 		)
+			# 	)
 
 			screenshot_b64 = await self.take_screenshot()
 			pixels_above, pixels_below = await self.get_scroll_info(page)
@@ -1126,6 +1128,75 @@ class BrowserContext:
 			logger.error(f'Failed to locate element: {str(e)}')
 			return None
 
+	@time_execution_async('--get_locate_element_by_xpath')
+	async def get_locate_element_by_xpath(self, xpath: str) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided XPath.
+		"""
+		current_frame = await self.get_current_page()
+
+		try:
+			# Use XPath to locate the element
+			element_handle = await current_frame.query_selector(f'xpath={xpath}')
+			if element_handle:
+				await element_handle.scroll_into_view_if_needed()
+				return element_handle
+			return None
+		except Exception as e:
+			logger.error(f'Failed to locate element by XPath {xpath}: {str(e)}')
+			return None
+
+	@time_execution_async('--get_locate_element_by_css_selector')
+	async def get_locate_element_by_css_selector(self, css_selector: str) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided CSS selector.
+		"""
+		current_frame = await self.get_current_page()
+
+		try:
+			# Use CSS selector to locate the element
+			element_handle = await current_frame.query_selector(css_selector)
+			if element_handle:
+				await element_handle.scroll_into_view_if_needed()
+				return element_handle
+			return None
+		except Exception as e:
+			logger.error(f'Failed to locate element by CSS selector {css_selector}: {str(e)}')
+			return None
+
+	@time_execution_async('--get_locate_element_by_text')
+	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided text.
+		If `nth` is provided, it returns the nth matching element (0-based).
+		"""
+		current_frame = await self.get_current_page()
+		try:
+			elements = await current_frame.query_selector_all(f"text={text}")
+			# considering only visible elements
+			elements = [el for el in elements if await el.is_visible()]
+
+			if not elements:
+				logger.error(f"No visible element with text '{text}' found.")
+				return None
+
+			if nth is not None:
+				if 0 <= nth < len(elements):
+					element_handle = elements[nth]
+				else:
+					logger.error(f"Visible element with text '{text}' not found at index {nth}.")
+					return None
+			else:
+				element_handle = elements[0]
+
+			await element_handle.scroll_into_view_if_needed()
+			return element_handle
+		except Exception as e:
+			logger.error(f"Failed to locate element by text '{text}': {str(e)}")
+			return None
+
+
+
 	@time_execution_async('--input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		"""
@@ -1311,8 +1382,13 @@ class BrowserContext:
 						if page.url == target['url']:
 							return page
 
-		# Fallback to last page
-		return pages[-1] if pages else await session.context.new_page()
+		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
+		non_extension_pages = [page for page in pages if not page.url.startswith('chrome-extension://')]
+		if non_extension_pages:
+			return non_extension_pages[-1]
+
+		# Fallback to opening a new tab
+		return await session.context.new_page()
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
