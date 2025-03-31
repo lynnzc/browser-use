@@ -234,7 +234,7 @@ class BrowserContext:
 	):
 		self.context_id = str(uuid.uuid4())
 
-		self.config = config or browser.config.new_context_config
+		self.config = config or BrowserContextConfig(**browser.config)
 		self.browser = browser
 
 		self.state = state or BrowserContextState()
