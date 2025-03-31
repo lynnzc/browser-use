@@ -99,14 +99,14 @@ CHROME_ARGS = [
 	# chrome://profile-internals
 	# f'--user-data-dir={CHROME_PROFILE_PATH}',     # managed by playwright arg instead
 	# f'--profile-directory={CHROME_PROFILE_USER}',
-	'--password-store=basic',  # use mock keychain instead of OS-provided keychain (we manage auth.json instead)
-	'--use-mock-keychain',
+	# '--password-store=basic',  # use mock keychain instead of OS-provided keychain (we manage auth.json instead)
+	# '--use-mock-keychain',
 	'--disable-cookie-encryption',  # we need to be able to write unencrypted cookies to save/load auth.json
 	'--disable-sync',  # don't try to use Google account sync features while automation is active
 	# Extensions
 	# chrome://inspect/#extensions
 	# f'--load-extension={CHROME_EXTENSIONS.map(({unpacked_path}) => unpacked_path).join(',')}',  # not needed when using existing profile that already has extensions installed
-	f'--allowlisted-extension-id={",".join(CHROME_EXTENSIONS.keys())}',
+	# f'--allowlisted-extension-id={",".join(CHROME_EXTENSIONS.keys())}',
 	'--allow-legacy-extension-manifests',
 	'--allow-pre-commit-input',  # allow JS mutations before page rendering is complete
 	'--disable-blink-features=AutomationControlled',  # hide the signatures that announce browser is being remote-controlled

@@ -122,7 +122,14 @@ class BrowserContextConfig(BaseModel):
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True,
+		extra='ignore',
+		populate_by_name=True,
+		from_attributes=True,
+		validate_assignment=True,
+		revalidate_instances='subclass-instances',
+	)
 
 	cookies_file: str | None = None
 	minimum_wait_page_load_time: float = 0.25
@@ -157,10 +164,56 @@ class BrowserContextConfig(BaseModel):
 	timezone_id: str | None = None
 
 
-@dataclass
 class BrowserSession:
-	context: PlaywrightBrowserContext
-	cached_state: BrowserState | None
+	def __init__(self, context: PlaywrightBrowserContext, cached_state: BrowserState | None = None):
+		init_script = """
+			(() => {
+				if (!window.getEventListeners) {
+					window.getEventListeners = function (node) {
+						return node.__listeners || {};
+					};
+
+					// Save the original addEventListener
+					const originalAddEventListener = Element.prototype.addEventListener;
+
+					const eventProxy = {
+						addEventListener: function (type, listener, options = {}) {
+							// Initialize __listeners if not exists
+							const defaultOptions = { once: false, passive: false, capture: false };
+							if(typeof options === 'boolean') {
+								options = { capture: options };
+							}
+							options = { ...defaultOptions, ...options };
+							if (!this.__listeners) {
+								this.__listeners = {};
+							}
+
+							// Initialize array for this event type if not exists
+							if (!this.__listeners[type]) {
+								this.__listeners[type] = [];
+							}
+							
+
+							// Add the listener to __listeners
+							this.__listeners[type].push({
+								listener: listener,
+								type: type,
+								...options
+							});
+
+							// Call original addEventListener using the saved reference
+							return originalAddEventListener.call(this, type, listener, options);
+						}
+					};
+
+					Element.prototype.addEventListener = eventProxy.addEventListener;
+				}
+			})()
+			"""
+		self.active_tab = None
+		self.context = context
+		self.cached_state = cached_state
+		self.context.on('page', lambda page: page.add_init_script(init_script))
 
 
 @dataclass
@@ -188,6 +241,7 @@ class BrowserContext:
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
+		self.active_tab: Page | None = None
 
 	async def __aenter__(self):
 		"""Async context manager entry"""
@@ -233,6 +287,7 @@ class BrowserContext:
 
 		finally:
 			# Dereference everything
+			self.active_tab = None
 			self.session = None
 			self._page_event_handler = None
 
@@ -309,6 +364,8 @@ class BrowserContext:
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
+		self.active_tab = active_page
+
 		return self.session
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
@@ -317,6 +374,10 @@ class BrowserContext:
 				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'📑  New page opened: {page.url}')
+
+			if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://'):
+				self.active_tab = page
+
 			if self.session is not None:
 				self.state.target_id = None
 
@@ -692,10 +753,11 @@ class BrowserContext:
 		session = await self.get_session()
 		page = await self._get_current_page(session)
 		await page.close()
-
+		self.active_tab = None
 		# Switch to the first available tab if any exist
 		if session.context.pages:
 			await self.switch_to_tab(0)
+			self.active_tab = session.context.pages[0]
 
 		# otherwise the browser will be closed
 
@@ -714,24 +776,24 @@ class BrowserContext:
 		debug_script = """(() => {
 			function getPageStructure(element = document, depth = 0, maxDepth = 10) {
 				if (depth >= maxDepth) return '';
-				
+
 				const indent = '  '.repeat(depth);
 				let structure = '';
-				
+
 				// Skip certain elements that clutter the output
 				const skipTags = new Set(['script', 'style', 'link', 'meta', 'noscript']);
-				
+
 				// Add current element info if it's not the document
 				if (element !== document) {
 					const tagName = element.tagName.toLowerCase();
-					
+
 					// Skip uninteresting elements
 					if (skipTags.has(tagName)) return '';
-					
+
 					const id = element.id ? `#${element.id}` : '';
-					const classes = element.className && typeof element.className === 'string' ? 
+					const classes = element.className && typeof element.className === 'string' ?
 						`.${element.className.split(' ').filter(c => c).join('.')}` : '';
-					
+
 					// Get additional useful attributes
 					const attrs = [];
 					if (element.getAttribute('role')) attrs.push(`role="${element.getAttribute('role')}"`);
@@ -742,10 +804,10 @@ class BrowserContext:
 						const src = element.getAttribute('src');
 						attrs.push(`src="${src.substring(0, 50)}${src.length > 50 ? '...' : ''}"`);
 					}
-					
+
 					// Add element info
 					structure += `${indent}${tagName}${id}${classes}${attrs.length ? ' [' + attrs.join(', ') + ']' : ''}\\n`;
-					
+
 					// Handle iframes specially
 					if (tagName === 'iframe') {
 						try {
@@ -761,7 +823,7 @@ class BrowserContext:
 						}
 					}
 				}
-				
+
 				// Get all child elements
 				const children = element.children || element.childNodes;
 				for (const child of children) {
@@ -769,10 +831,10 @@ class BrowserContext:
 						structure += getPageStructure(child, depth + 1, maxDepth);
 					}
 				}
-				
+
 				return structure;
 			}
-			
+
 			return getPageStructure();
 		})()"""
 
@@ -1168,7 +1230,9 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
-	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
+	async def get_locate_element_by_text(
+		self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None
+	) -> Optional[ElementHandle]:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
@@ -1177,7 +1241,7 @@ class BrowserContext:
 		current_frame = await self.get_current_page()
 		try:
 			# handle also specific element type or use any type.
-			selector = f"{element_type or '*'}:text(\"{text}\")"
+			selector = f'{element_type or "*"}:text("{text}")'
 			elements = await current_frame.query_selector_all(selector)
 			# considering only visible elements
 			elements = [el for el in elements if await el.is_visible()]
@@ -1346,6 +1410,7 @@ class BrowserContext:
 					self.state.target_id = target['targetId']
 					break
 
+		self.active_tab = page
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
@@ -1357,6 +1422,9 @@ class BrowserContext:
 
 		session = await self.get_session()
 		new_page = await session.context.new_page()
+
+		self.active_tab = new_page
+
 		await new_page.wait_for_load_state()
 
 		if url:
@@ -1386,6 +1454,9 @@ class BrowserContext:
 						if page.url == target['url']:
 							return page
 
+		if self.active_tab and self.active_tab in session.context.pages and not self.active_tab.is_closed():
+			return self.active_tab
+
 		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
 		non_extension_pages = [
 			page for page in pages if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://')
@@ -1401,7 +1472,9 @@ class BrowserContext:
 			# reopen a new window in the browser and try again
 			logger.warning('⚠️  No browser window available, opening a new window')
 			await self._initialize_session()
-			return await session.context.new_page()
+			page = await session.context.new_page()
+			self.active_tab = page
+			return page
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
@@ -1482,6 +1555,7 @@ class BrowserContext:
 		for page in pages:
 			await page.close()
 
+		self.active_tab = None
 		session.cached_state = None
 		self.state.target_id = None
 
@@ -1525,4 +1599,4 @@ class BrowserContext:
 		    TimeoutError: If the element does not become visible within the specified timeout.
 		"""
 		page = await self.get_current_page()
-		await page.wait_for_selector(selector, state="visible", timeout=timeout)
+		await page.wait_for_selector(selector, state='visible', timeout=timeout)
