@@ -150,7 +150,7 @@ class Agent(Generic[Context]):
 		#
 		context: Context | None = None,
 		# Memory settings
-		enable_memory: bool = True,
+		enable_memory: bool = False,
 		memory_config: Optional[MemoryConfig] = None,
 	):
 		if page_extraction_llm is None:
