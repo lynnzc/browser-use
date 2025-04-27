@@ -1222,7 +1222,7 @@ class Agent(Generic[Context]):
 		test_answer = 'paris'
 		try:
 			# dont convert this to async! it *should* block any subsequent llm calls from running
-			response = self.llm.invoke([HumanMessage(content=test_prompt)])  # noqa: ASYNC
+			response = self.llm.invoke([HumanMessage(content=test_prompt)])  # noqa: RUF006
 			response_text = str(response.content).lower()
 
 			if test_answer in response_text:
@@ -1241,10 +1241,13 @@ class Agent(Generic[Context]):
 				raise Exception('LLM responded to a simple test question incorrectly')
 		except Exception as e:
 			self.llm._verified_api_keys = False
-			logger.error(
-				f'\n\n❌  LLM {self.llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n\n{e}\n'
-			)
-			return False
+			if required_keys:
+				logger.error(
+					f'\n\n❌  LLM {self.llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n\n{e}\n'
+				)
+				return False
+			else:
+				pass
 
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
